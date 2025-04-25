@@ -17,6 +17,43 @@ def calculate_r2_and_residuals(y_meas: pd.Series, y_fit: pd.Series):
     return r2, residuals
 
 
+# Helper: single fit given mode and initial slate
+def fit_parameters(x, y, t, mode, a0, b0, c0, max_a, max_b, max_c):
+    # Define fitting function and bounds based on lock mode
+    if mode == "None":
+        def f(x_, a, b, c): return model_ui_curve(x_, a, b, c, t)
+        p0, bounds = [a0, b0, c0], ([0, 0, 0], [max_a, max_b, max_c])
+    elif mode == "Resistance":
+        def f(x_, b, c): return model_ui_curve(x_, a0, b, c, t)
+        p0, bounds = [b0, c0], ([0, 0], [max_b, max_c])
+    elif mode == "Tafel Slope":
+        def f(x_, a, c): return model_ui_curve(x_, a, b0, c, t)
+        p0, bounds = [a0, c0], ([0, 0], [max_a, max_c])
+    elif mode == "Exchange current":
+        def f(x_, a, b): return model_ui_curve(x_, a, b, c0, t)
+        p0, bounds = [a0, b0], ([0, 0], [max_a, max_b])
+    elif mode == "Resistance and Tafel":
+        def f(x_, c): return model_ui_curve(x_, a0, b0, c, t)
+        p0, bounds = [c0], ([0], [max_c])
+    elif mode == "Resistance and Exchange":
+        def f(x_, b): return model_ui_curve(x_, a0, b, c0, t)
+        p0, bounds = [b0], ([0], [max_b])
+    else:  # "Tafel and Exchange"
+        def f(x_, a): return model_ui_curve(x_, a, b0, c0, t)
+        p0, bounds = [a0], ([0], [max_a])
+    popt, _ = curve_fit(f, x, y, p0=p0, bounds=bounds, maxfev=100000)
+    # Map back to a, b, c
+    opt_a, opt_b, opt_c = a0, b0, c0
+    if mode == "None": opt_a, opt_b, opt_c = popt
+    elif mode == "Resistance": opt_b, opt_c = popt
+    elif mode == "Tafel Slope": opt_a, opt_c = popt
+    elif mode == "Exchange current": opt_a, opt_b = popt
+    elif mode == "Resistance and Tafel": opt_c = popt[0]
+    elif mode == "Resistance and Exchange": opt_b = popt[0]
+    else: opt_a = popt[0]
+    return opt_a, opt_b, opt_c
+
+
 # -- Streamlit page setup --
 st.set_page_config(layout="wide")
 
@@ -27,6 +64,8 @@ if 'tafel' not in st.session_state:
     st.session_state.tafel = 0.200          # V/dec
 if 'exchange' not in st.session_state:
     st.session_state.exchange = 0.50        # mA/cm²
+if 'bootstrap_results' not in st.session_state:
+    st.session_state.bootstrap_results = None
 # Max bounds from sliders
 max_a_slider = 2000
 max_a = max_a_slider / 1e6
@@ -112,60 +151,19 @@ with col1:
     )
 
     # Fitting logic
-    def fit_curve_callback():
+    def fit_callback():
+        if st.session_state.data_df.empty: return
         df = st.session_state.data_df
-        if df.empty:
-            return
-        x = df["current dens. [mA/cm^2]"].values
-        y = df["voltage - measured [V]"].values
-        t = st.session_state.t_val
-
-        # Current slider values
-        a0 = st.session_state.resistance / 1e6
-        b0 = st.session_state.tafel
-        c0 = st.session_state.exchange
-
-        opt_a, opt_b, opt_c = a0, b0, c0
-        mode = st.session_state.lock_opt
-
-        # Fit for each lock state
-        if mode == "None":
-            def f(x_, a, b, c): return model_ui_curve(x_, a, b, c, t)
-            p0, bounds = [a0, b0, c0], ([0, 0, 0], [max_a, max_b, max_c])
-        elif mode == "Resistance":
-            def f(x_, b, c): return model_ui_curve(x_, a0, b, c, t)
-            p0, bounds = [b0, c0], ([0, 0], [max_b, max_c])
-        elif mode == "Tafel Slope":
-            def f(x_, a, c): return model_ui_curve(x_, a, b0, c, t)
-            p0, bounds = [a0, c0], ([0, 0], [max_a, max_c])
-        elif mode == "Exchange current":
-            def f(x_, a, b): return model_ui_curve(x_, a, b, c0, t)
-            p0, bounds = [a0, b0], ([0, 0], [max_a, max_b])
-        elif mode == "Resistance and Tafel":
-            def f(x_, c): return model_ui_curve(x_, a0, b0, c, t)
-            p0, bounds = [c0], ([0], [max_c])
-        elif mode == "Resistance and Exchange":
-            def f(x_, b): return model_ui_curve(x_, a0, b, c0, t)
-            p0, bounds = [b0], ([0], [max_b])
-        else:  # "Tafel and Exchange"
-            def f(x_, a): return model_ui_curve(x_, a, b0, c0, t)
-            p0, bounds = [a0], ([0], [max_a])
-
-        popt, _ = curve_fit(f, x, y, p0=p0, bounds=bounds, maxfev=100000)
-        # Map optimized values back
-        if mode == "None": opt_a, opt_b, opt_c = popt
-        elif mode == "Resistance": opt_b, opt_c = popt
-        elif mode == "Tafel Slope": opt_a, opt_c = popt
-        elif mode == "Exchange current": opt_a, opt_b = popt
-        elif mode == "Resistance and Tafel": opt_c = popt[0]
-        elif mode == "Resistance and Exchange": opt_b = popt[0]
-        else: opt_a = popt[0]
-
-        st.session_state.resistance = int(opt_a * 1e6)
+        x, y = df["current dens. [mA/cm^2]"].values, df["voltage - measured [V]"].values
+        a0, b0, c0 = st.session_state.resistance/1e6, st.session_state.tafel, st.session_state.exchange
+        max_a, max_b, max_c = 2000/1e6, 0.400, 5.00
+        opt_a, opt_b, opt_c = fit_parameters(x, y, st.session_state.t_val, st.session_state.lock_opt,
+                                              a0, b0, c0, max_a, max_b, max_c)
+        st.session_state.resistance = int(opt_a*1e6)
         st.session_state.tafel = opt_b
         st.session_state.exchange = opt_c
 
-    st.button("Fit curve", on_click=fit_curve_callback)
+    st.button("Fit curve", on_click=fit_callback)
 
 # -- Plotting in second column --
 current_sim = np.linspace(
@@ -205,3 +203,53 @@ with col2:
         )
     ax.legend(loc='upper left')
     st.pyplot(fig)
+
+# -- Bootstrap analysis section --
+st.write('---')
+st.write('### Bootstrap parameter uncertainty (n=1000)')
+# Trigger bootstrap
+if st.button('Bootstrap fit (n=1000)'):
+    df = st.session_state.data_df
+    if df.empty:
+        st.warning("No data to bootstrap.")
+    else:
+        x_all, y_all = df["current dens. [mA/cm^2]"].values, df["voltage - measured [V]"].values
+        a0, b0, c0 = st.session_state.resistance/1e6, st.session_state.tafel, st.session_state.exchange
+        mode = st.session_state.lock_opt
+        max_a_boot, max_b_boot, max_c_boot = 1, 1, 10
+        results = np.zeros((1000,3))
+        with st.spinner(text="Running bootstrap fits..."):
+            for i in range(1000):
+                idx = np.random.choice(len(x_all), size=len(x_all), replace=True)
+                xa, ya = x_all[idx], y_all[idx]
+                oa, ob, oc = fit_parameters(
+                    xa, ya, st.session_state.t_val, mode, a0, b0, c0, max_a_boot, max_b_boot, max_c_boot
+                )
+                results[i] = [oa*1e6, ob, oc]
+        st.session_state.bootstrap_results = results
+
+# Display bootstrap results below button
+if st.session_state.bootstrap_results is not None:
+    res = st.session_state.bootstrap_results
+    # Summary table
+    means = np.mean(res, axis=0)
+    stds = np.std(res, axis=0)
+    lowers = np.percentile(res, 2.5, axis=0)
+    uppers = np.percentile(res, 97.5, axis=0)
+    df_summary = pd.DataFrame({
+        'mean': means,
+        'standard deviation': stds,
+        '95% CI lower': lowers,
+        '95% CI upper': uppers
+    }, index=["Resistance (mΩ·cm²)", "Tafel Slope (V/dec)", "Exchange current (mA/cm²)"])
+    st.write(df_summary)
+    # Histograms side-by-side
+    hist_cols = st.columns(3)
+    names = ["Resistance (mΩ·cm²)", "Tafel Slope (V/dec)", "Exchange current (mA/cm²)"]
+    for idx, name in enumerate(names):
+        with hist_cols[idx]:
+            fig, ax = plt.subplots(figsize=(4,3))
+            ax.hist(res[:,idx], bins=30)
+            ax.set_title(name)
+            st.pyplot(fig)
+
