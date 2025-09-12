@@ -24,4 +24,5 @@ USER appuser
 
 EXPOSE 8501
 
-CMD ["streamlit","run","src/vao_data_app_main.py","--server.port=8501","--server.address=0.0.0.0"]
+
+CMD ["streamlit","run","manual_fit_app.py","--server.port=8501","--server.address=0.0.0.0"]
