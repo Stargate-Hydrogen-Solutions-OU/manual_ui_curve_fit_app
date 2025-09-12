@@ -1,0 +1,13 @@
+# Keep the image lean and avoid shipping local/dev artifacts
+data/
+notebooks/
+tests/
+.idea/
+.git/
+.venv/
+venv/
+.gitignore
+*.bat
+*.pyc
+__pycache__/
+.DS_Store
