@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_CACHE_DIR=/tmp/streamlit-cache
+
+# Non-root user
+RUN useradd -m -u 1000 appuser
+WORKDIR /app
+
+# Only install Python deps
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Copy just the code you need (data/ is ignored via .dockerignore)
+COPY . .
+
+# Writable dirs for read-only runtime
+RUN mkdir -p /tmp/streamlit-cache && chown -R appuser:appuser /app /tmp/streamlit-cache
+
+USER appuser
+
+EXPOSE 8501
+
+CMD ["streamlit","run","src/vao_data_app_main.py","--server.port=8501","--server.address=0.0.0.0"]
