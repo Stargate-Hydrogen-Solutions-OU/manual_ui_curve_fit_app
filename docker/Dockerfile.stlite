@@ -1,0 +1,11 @@
+FROM nginx:1.27-alpine
+
+WORKDIR /usr/share/nginx/html
+
+COPY stlite/index.html ./index.html
+COPY stlite/requirements.txt ./requirements.txt
+COPY manual_fit_app.py ./manual_fit_app.py
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
