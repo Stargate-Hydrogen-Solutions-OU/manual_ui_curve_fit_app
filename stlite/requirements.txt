@@ -1,0 +1,5 @@
+# Python packages to install in Pyodide at app startup.
+numpy
+pandas
+matplotlib
+scipy
