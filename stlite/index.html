@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Manual UI Curve Fit App (stlite)</title>
-    <script src="https://cdn.jsdelivr.net/npm/@stlite/browser@0.76.0/build/stlite.js"></script>
     <style>
       html,
       body,
@@ -68,8 +67,46 @@
       const loadingIndicator = document.getElementById("loading-indicator");
       const loadingMessage = document.getElementById("loading-message");
 
+      const stliteRuntimeCandidates = [
+        "https://cdn.jsdelivr.net/npm/@stlite/browser@0.76.0/build/stlite.js",
+        "https://unpkg.com/@stlite/browser@0.76.0/build/stlite.js",
+      ];
+
       const setLoadingMessage = (message) => {
         loadingMessage.textContent = message;
+      };
+
+      const loadScript = (url) =>
+        new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = url;
+          script.async = true;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+          document.head.appendChild(script);
+        });
+
+      const loadStliteRuntime = async () => {
+        if (globalThis.stlite && typeof globalThis.stlite.mount === "function") {
+          return globalThis.stlite;
+        }
+
+        setLoadingMessage("Loading stlite runtime…");
+
+        for (const runtimeUrl of stliteRuntimeCandidates) {
+          try {
+            await loadScript(runtimeUrl);
+            if (globalThis.stlite && typeof globalThis.stlite.mount === "function") {
+              return globalThis.stlite;
+            }
+          } catch (_error) {
+            // Try the next CDN candidate.
+          }
+        }
+
+        throw new Error(
+          "Unable to load stlite runtime. Please check internet access to public CDNs (jsDelivr/unpkg) or host @stlite/browser locally.",
+        );
       };
 
       const loadRequirements = async () => {
@@ -85,19 +122,30 @@
 
       const loadApp = async () => {
         setLoadingMessage("Loading application source…");
-        const response = await fetch("./manual_fit_app.py");
-        return response.text();
+
+        const appCandidates = ["./manual_fit_app.py", "../manual_fit_app.py"];
+        for (const appPath of appCandidates) {
+          const response = await fetch(appPath);
+          if (response.ok) {
+            return response.text();
+          }
+        }
+
+        throw new Error(
+          "Unable to find manual_fit_app.py. Serve from repository root or copy the file into the stlite directory.",
+        );
       };
 
       try {
-        const [requirements, appSource] = await Promise.all([
+        const [stliteRuntime, requirements, appSource] = await Promise.all([
+          loadStliteRuntime(),
           loadRequirements(),
           loadApp(),
         ]);
 
         setLoadingMessage("Starting Streamlit runtime…");
 
-        stlite.mount(
+        stliteRuntime.mount(
           {
             requirements,
             entrypoint: "manual_fit_app.py",
