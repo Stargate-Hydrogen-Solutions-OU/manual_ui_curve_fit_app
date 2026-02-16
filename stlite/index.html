@@ -17,13 +17,63 @@
 
       body {
         font-family: sans-serif;
+        background: #f7f8fa;
+      }
+
+      #loading-indicator {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 12px;
+        color: #1f2937;
+        background: #f7f8fa;
+        z-index: 1000;
+      }
+
+      #loading-indicator.hidden {
+        display: none;
+      }
+
+      .spinner {
+        width: 34px;
+        height: 34px;
+        border: 4px solid #d1d5db;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+
+      #loading-message {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="loading-indicator" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loading-message">Loading app…</p>
+    </div>
     <script type="module">
+      const loadingIndicator = document.getElementById("loading-indicator");
+      const loadingMessage = document.getElementById("loading-message");
+
+      const setLoadingMessage = (message) => {
+        loadingMessage.textContent = message;
+      };
+
       const loadRequirements = async () => {
+        setLoadingMessage("Loading Python requirements…");
         const response = await fetch("./requirements.txt");
         const content = await response.text();
 
@@ -34,25 +84,36 @@
       };
 
       const loadApp = async () => {
+        setLoadingMessage("Loading application source…");
         const response = await fetch("./manual_fit_app.py");
         return response.text();
       };
 
-      const [requirements, appSource] = await Promise.all([
-        loadRequirements(),
-        loadApp(),
-      ]);
+      try {
+        const [requirements, appSource] = await Promise.all([
+          loadRequirements(),
+          loadApp(),
+        ]);
 
-      stlite.mount(
-        {
-          requirements,
-          entrypoint: "manual_fit_app.py",
-          files: {
-            "manual_fit_app.py": appSource,
+        setLoadingMessage("Starting Streamlit runtime…");
+
+        stlite.mount(
+          {
+            requirements,
+            entrypoint: "manual_fit_app.py",
+            files: {
+              "manual_fit_app.py": appSource,
+            },
           },
-        },
-        document.getElementById("root"),
-      );
+          document.getElementById("root"),
+        );
+
+        loadingIndicator.classList.add("hidden");
+      } catch (error) {
+        setLoadingMessage(
+          `Failed to load app: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     </script>
   </body>
 </html>
