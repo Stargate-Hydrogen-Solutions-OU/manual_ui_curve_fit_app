@@ -60,22 +60,30 @@ This workflow is useful while iterating on UI/app code because you can refresh t
    cd /path/to/manual_ui_curve_fit_app
    ```
 
-2. Start a local static Python server from the `stlite` folder:
+2. Start a local static Python server from the repository root:
 
    ```bash
-   cd stlite
    python -m http.server 8000
    ```
 
 3. Open the app in your browser:
 
    ```text
-   http://localhost:8000
+   http://localhost:8000/stlite/
    ```
+
+   > Why not run the server inside `stlite/`?
+   > `manual_fit_app.py` lives in the repository root and is fetched by the stlite bootstrap. If you serve only `stlite/`, the app source returns 404.
 
 4. Edit `manual_fit_app.py`, `stlite/index.html`, or `stlite/requirements.txt` as needed, then refresh the browser.
 
 5. Stop the local server with `Ctrl+C`.
+
+
+### Troubleshooting local browser run
+
+- If the page shows `Failed to load app: stlite is not defined` or `Unable to load stlite runtime`, your browser likely cannot download `@stlite/browser` from the public CDN.
+- The app now tries **both** jsDelivr and unpkg. If both are blocked (for example by a corporate firewall), allow access to one of them or host `@stlite/browser` locally and point `stlite/index.html` to that local script.
 
 ## Suggested docker-compose layout
 
